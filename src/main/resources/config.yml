@@ -3,3 +3,6 @@
 name-contains: []
 lore-contains:
   - "blocks at once"
+
+# Log every block that MythicTools asks about and every block credited to the blocks-mined statistic.
+debug-stats: false

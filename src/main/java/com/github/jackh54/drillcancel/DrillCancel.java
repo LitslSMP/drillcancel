@@ -14,6 +14,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -25,22 +28,33 @@ public final class DrillCancel extends JavaPlugin implements Listener {
     // Break events being handled on this thread (Folia runs each region on its own thread). A stack, because
     // a plugin can fire another BlockBreakEvent while one is being handled.
     private final ThreadLocal<ArrayDeque<BlockBreakEvent>> breaks = ThreadLocal.withInitial(ArrayDeque::new);
+    // Breaks whose block was already gone when every other listener had run (MythicTools removed it itself),
+    // so vanilla will not count it even though the event went ahead.
+    private final Set<BlockBreakEvent> goneAtMonitor = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 
     private List<String> nameContains;
     private List<String> loreContains;
+    private boolean debugStats;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         nameContains = lowered(getConfig().getStringList("name-contains"));
         loreContains = lowered(getConfig().getStringList("lore-contains"));
+        debugStats = getConfig().getBoolean("debug-stats", false);
         getServer().getPluginManager().registerEvents(this, this);
         if (getServer().getPluginManager().isPluginEnabled("MythicTools")) {
             SpawnerGuard.register(this);
             getLogger().info("MythicTools tools can no longer delete spawners.");
+            AreaBreakStats.register(this);
+            getLogger().info("Blocks broken by MythicTools area tools now count toward the blocks-mined statistic.");
         } else {
             getLogger().warning("MythicTools is not enabled; only drill breaks of spawners are cancelled.");
         }
+    }
+
+    boolean debugStats() {
+        return debugStats;
     }
 
     /** The break event for this block that is being handled right now on this thread, or null. */
@@ -59,6 +73,11 @@ public final class DrillCancel extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void untrackBreak(BlockBreakEvent event) {
         breaks.get().remove(event);
+        if (event.getBlock().getType().isAir()) goneAtMonitor.add(event);
+    }
+
+    boolean goneAtMonitor(BlockBreakEvent event) {
+        return goneAtMonitor.contains(event);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
